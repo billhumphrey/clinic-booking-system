@@ -1,5 +1,4 @@
 import enum
-from datetime import datetime
 
 from sqlalchemy import (
     Column,
@@ -14,6 +13,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 
 from .database import Base
+from .utils import utc_now
 
 
 class AppointmentStatus(str, enum.Enum):
@@ -27,7 +27,7 @@ class Doctor(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
     specialty = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     working_hours = relationship(
         "WorkingHours", back_populates="doctor", cascade="all, delete-orphan"
@@ -61,7 +61,7 @@ class Patient(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
     email = Column(String, nullable=False, unique=True, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     appointments = relationship("Appointment", back_populates="patient")
 
@@ -76,8 +76,8 @@ class Appointment(Base):
     end_time = Column(DateTime, nullable=False)
     status = Column(Enum(AppointmentStatus), nullable=False, default=AppointmentStatus.booked)
     cancellation_reason = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     doctor = relationship("Doctor", back_populates="appointments")
     patient = relationship("Patient", back_populates="appointments")

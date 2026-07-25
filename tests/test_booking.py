@@ -1,5 +1,6 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 
+from app.utils import utc_now
 from .conftest import next_valid_slot
 
 
@@ -45,7 +46,7 @@ def test_booking_in_the_past(client, doctor, patient):
 
 
 def test_booking_within_one_hour_of_now_rejected(client, doctor, patient):
-    slot = datetime.utcnow() + timedelta(minutes=30)
+    slot = utc_now() + timedelta(minutes=30)
     resp = client.post(
         "/appointments",
         json={"doctor_id": doctor.id, "patient_id": patient.id, "start_time": slot.isoformat()},

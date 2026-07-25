@@ -5,6 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import models
+from ..utils import utc_now
 
 SLOT_MINUTES = 30
 MIN_LEAD_TIME = timedelta(hours=1)
@@ -84,7 +85,7 @@ def get_available_slots(db: Session, doctor_id: int, day: date_cls) -> list[dict
     )
     booked_starts = {row[0] for row in booked_rows}
 
-    now = datetime.utcnow()
+    now = utc_now()
     slots = []
     for block in blocks:
         cur = datetime.combine(day, block.start_time)
@@ -102,7 +103,7 @@ def _validate_slot(
     start_time: datetime,
     exclude_appointment_id: int | None = None,
 ):
-    now = datetime.utcnow()
+    now = utc_now()
 
     if start_time < now:
         raise HTTPException(status_code=400, detail="Cannot book a slot in the past")

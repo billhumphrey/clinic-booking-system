@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -7,6 +5,7 @@ from .. import models
 from ..database import get_db
 from ..schemas import AppointmentOut, PatientOut
 from ..services import booking_service
+from ..utils import utc_now
 
 router = APIRouter(prefix="/patients", tags=["patients"])
 
@@ -24,7 +23,7 @@ def get_patient_appointments(patient_id: int, db: Session = Depends(get_db)):
         .filter(
             models.Appointment.patient_id == patient_id,
             models.Appointment.status == models.AppointmentStatus.booked,
-            models.Appointment.start_time >= datetime.utcnow(),
+            models.Appointment.start_time >= utc_now(),
         )
         .order_by(models.Appointment.start_time.asc())
         .all()

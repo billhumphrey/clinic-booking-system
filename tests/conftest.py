@@ -9,6 +9,7 @@ from sqlalchemy.orm import sessionmaker
 from app.database import Base, get_db
 from app.main import app
 from app import models
+from app.utils import utc_now
 
 # Respect DATABASE_URL if set (CI runs this against a real Postgres service
 # container to match production), otherwise fall back to a local SQLite file
@@ -76,5 +77,5 @@ def patient(db_session):
 
 def next_valid_slot(days_ahead=1, hour=10):
     """A datetime guaranteed to be >1hr in the future and inside 09:00-17:00."""
-    target = datetime.utcnow() + timedelta(days=days_ahead)
+    target = utc_now() + timedelta(days=days_ahead)
     return target.replace(hour=hour, minute=0, second=0, microsecond=0)
