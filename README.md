@@ -267,15 +267,16 @@ set, matching what CI does.
 ### Deploying it yourself
 
 1. Push this repo to a new public GitHub repo.
-2. On [Render](https://render.com): New → Web Service → connect the repo →
-   Environment: Docker → it will pick up the `Dockerfile`.
-3. Add a Render **Postgres** instance, copy its internal connection string
-   into the web service's `DATABASE_URL` environment variable.
-4. In the Render service settings, copy the **Deploy Hook URL**.
-5. In GitHub repo Settings → Secrets and variables → Actions, add
+2. On [Render](https://render.com): New → **Blueprint** → connect the repo →
+   it will read `render.yaml` and create both the web service and the
+   Postgres database with `DATABASE_URL` wired automatically.
+   (Alternatively: New → Web Service → Environment: Docker, then manually add
+   a Render Postgres instance and set `DATABASE_URL`.)
+3. In the Render web service settings, copy the **Deploy Hook URL**.
+4. In GitHub repo Settings → Secrets and variables → Actions, add
    `RENDER_DEPLOY_HOOK_URL` with that value.
-6. Push to `main` — `deploy.yml` will test, then trigger the Render deploy.
-7. Update the "Deployment URL" section at the top of this README with the
+5. Push to `main` — `deploy.yml` will run tests, then trigger the Render deploy.
+6. Update the "Deployment URL" section at the top of this README with the
    live `.onrender.com` URL.
 
 Render was chosen over Fly.io mainly for this assessment because its deploy
