@@ -1,8 +1,8 @@
-name: Deploy
+name: Tests
 
 on:
-  push:
-    branches: [main]
+  pull_request:
+    branches: [main, develop]
 
 jobs:
   test:
@@ -41,18 +41,3 @@ jobs:
           DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/clinic_booking_test"
         run: |
           pytest tests/ -v --tb=short
-
-  deploy:
-    needs: test
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Deploy to Render
-        env:
-          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
-        run: |
-          if [ ! -z "$RENDER_DEPLOY_HOOK" ]; then
-            curl "$RENDER_DEPLOY_HOOK"
-          fi

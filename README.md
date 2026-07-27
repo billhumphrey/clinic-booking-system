@@ -11,7 +11,7 @@ reschedule 30-minute appointment slots, without double-booking.
 
 `https://<your-render-service>.onrender.com` — **not yet deployed.**
 
-The repo is deploy-ready: Dockerfile, GitHub Actions workflows (`ci.yml` and
+The repo is deploy-ready: Dockerfile, GitHub Actions workflows (`tests.yml` and
 `deploy.yml`), and a Render deploy-hook integration are in place. The remaining
 steps that require your own accounts are:
 
@@ -19,7 +19,7 @@ steps that require your own accounts are:
    checked, so it is either private or the remote URL needs updating).
 2. Create a Render web service connected to the repo.
 3. Add a Render Postgres instance and set `DATABASE_URL` on the web service.
-4. Add the Render deploy hook URL as the `RENDER_DEPLOY_HOOK_URL` secret in
+4. Add the Render deploy hook URL as the `RENDER_DEPLOY_HOOK` secret in
    GitHub repo settings.
 
 See "Deploying it yourself" below for the exact click-through steps.
@@ -123,7 +123,7 @@ valid `doctor_id`/`patient_id` values for the demo).
    the suite in seconds. But SQLite's concurrency model is different enough
    from Postgres's that a dev-only SQLite test suite could hide the exact
    race condition this system is supposed to prevent. So CI runs the same
-   suite against a real Postgres service container (see `ci.yml`), and
+   suite against a real Postgres service container (see `tests.yml`), and
    production always uses Postgres. Local `docker-compose.yml` also spins up
    Postgres if you want dev to match prod exactly.
 
@@ -214,8 +214,8 @@ Dockerfile
 docker-compose.yml       # local dev with real Postgres
 requirements.txt
 .github/workflows/
-  ci.yml                 # tests on every PR + push to main
-  deploy.yml             # tests, then deploy hook, on merge to main
+  tests.yml              # tests on every PR into main/develop
+  deploy.yml             # tests, then deploy hook, on push to main
 ```
 
 Routers only handle HTTP concerns (parsing, status codes); all business
@@ -254,15 +254,14 @@ set, matching what CI does.
 
 ## CI/CD
 
-- **`.github/workflows/ci.yml`** — runs on every PR into `main` and every
-  push to `main`. Spins up a real Postgres 16 service container, creates the
-  schema, and runs the full `pytest` suite against it. A failing test fails
-  the PR check.
+- **`.github/workflows/tests.yml`** — runs on every PR into `main` or
+  `develop`. Spins up a real Postgres 15 service container, installs
+  dependencies, and runs the full `pytest` suite against it. A failing test
+  fails the PR check.
 - **`.github/workflows/deploy.yml`** — runs on push to `main` only. It first
-  calls `ci.yml` as a reusable workflow (so a broken `main` never deploys),
-  then, only if tests pass, `curl`s Render's deploy hook URL (stored as the
-  `RENDER_DEPLOY_HOOK_URL` repo secret) to trigger a new deploy of the
-  latest image.
+  runs the same test job inline, then, only if tests pass, `curl`s Render's
+  deploy hook URL (stored as the `RENDER_DEPLOY_HOOK` repo secret) to trigger
+  a new deploy of the latest image.
 
 ### Deploying it yourself
 
@@ -274,7 +273,7 @@ set, matching what CI does.
    a Render Postgres instance and set `DATABASE_URL`.)
 3. In the Render web service settings, copy the **Deploy Hook URL**.
 4. In GitHub repo Settings → Secrets and variables → Actions, add
-   `RENDER_DEPLOY_HOOK_URL` with that value.
+   `RENDER_DEPLOY_HOOK` with that value.
 5. Push to `main` — `deploy.yml` will run tests, then trigger the Render deploy.
 6. Update the "Deployment URL" section at the top of this README with the
    live `.onrender.com` URL.
@@ -329,7 +328,7 @@ any design trade-off I would resolve differently.)*
 - [x] Section 3 Dockerfile, `render.yaml`, and CI/CD workflows in place.
 - [ ] Public GitHub repo made public and current commits pushed.
 - [ ] Render web service deployed and public URL added to README.
-- [ ] `RENDER_DEPLOY_HOOK_URL` secret added to GitHub repo settings.
+- [ ] `RENDER_DEPLOY_HOOK` secret added to GitHub repo settings.
 
 The commit history currently begins with one large initial commit; all later
 changes are granular. If you prefer a fully granular history, rewrite it

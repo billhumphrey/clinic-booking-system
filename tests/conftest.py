@@ -29,33 +29,52 @@ engine = create_engine(
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
-def override_get_db():
-    db = TestingSessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-app.dependency_overrides[get_db] = override_get_db
-
-
-@pytest.fixture(autouse=True)
-def clean_db():
-    Base.metadata.drop_all(bind=engine)
+@pytest.fixture(scope="session", autouse=True)
+def setup_database():
+    """Create the schema once before the test session, tear it down at the end."""
     Base.metadata.create_all(bind=engine)
     yield
+    engine.dispose()
     Base.metadata.drop_all(bind=engine)
 
 
 @pytest.fixture
-def client():
-    return TestClient(app)
+def db_and_client():
+    """
+    Open a single database transaction for one test. Both the test fixtures and
+    the FastAPI app share the same session, and the transaction is rolled back at
+    the end so each test starts clean. This avoids expensive drop_all/create_all
+    cycles and the Postgres lock issues that can make the CI suite hang.
+    """
+    connection = engine.connect()
+    transaction = connection.begin()
+    session = TestingSessionLocal(bind=connection)
+
+    def override_get_db():
+        try:
+            yield session
+        finally:
+            pass
+
+    app.dependency_overrides[get_db] = override_get_db
+    client = TestClient(app)
+
+    yield session, client
+
+    app.dependency_overrides.clear()
+    session.close()
+    transaction.rollback()
+    connection.close()
 
 
 @pytest.fixture
-def db_session():
-    return TestingSessionLocal()
+def client(db_and_client):
+    return db_and_client[1]
+
+
+@pytest.fixture
+def db_session(db_and_client):
+    return db_and_client[0]
 
 
 @pytest.fixture
