@@ -42,8 +42,5 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run migrations (create tables against test DB)
-        run: python -c "from app.database import Base, engine; Base.metadata.create_all(bind=engine)"
-
       - name: Run test suite
         run: pytest -v
