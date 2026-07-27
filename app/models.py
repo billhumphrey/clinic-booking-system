@@ -6,7 +6,7 @@ from sqlalchemy import (
     String,
     DateTime,
     ForeignKey,
-    Enum,
+    CheckConstraint,
     Index,
     Time,
 )
@@ -74,7 +74,7 @@ class Appointment(Base):
     patient_id = Column(Integer, ForeignKey("patients.id"), nullable=False)
     start_time = Column(DateTime, nullable=False)
     end_time = Column(DateTime, nullable=False)
-    status = Column(Enum(AppointmentStatus), nullable=False, default=AppointmentStatus.booked)
+    status = Column(String, nullable=False, default=AppointmentStatus.booked)
     cancellation_reason = Column(String, nullable=True)
     created_at = Column(DateTime, default=utc_now)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
@@ -94,5 +94,9 @@ class Appointment(Base):
             unique=True,
             sqlite_where=(status == "booked"),
             postgresql_where=(status == "booked"),
+        ),
+        CheckConstraint(
+            "status IN ('booked', 'cancelled')",
+            name="ck_appointment_status",
         ),
     )
