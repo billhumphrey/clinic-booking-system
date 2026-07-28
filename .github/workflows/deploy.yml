@@ -51,7 +51,7 @@ jobs:
 
       - name: Deploy to Render
         env:
-          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
         run: |
           if [ ! -z "$RENDER_DEPLOY_HOOK" ]; then
             curl "$RENDER_DEPLOY_HOOK"
