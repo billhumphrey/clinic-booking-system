@@ -4,6 +4,24 @@ from app.utils import utc_now
 from .conftest import next_valid_slot
 
 
+def test_create_doctor(client):
+    resp = client.post("/doctors", json={"name": "Dr. New", "specialty": "Neurology"})
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["name"] == "Dr. New"
+    assert body["specialty"] == "Neurology"
+
+
+def test_create_patient(client):
+    resp = client.post(
+        "/patients", json={"name": "Jane Doe", "email": "jane.doe@example.com"}
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["name"] == "Jane Doe"
+    assert body["email"] == "jane.doe@example.com"
+
+
 def test_successful_booking(client, doctor, patient):
     slot = next_valid_slot()
     resp = client.post(

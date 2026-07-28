@@ -1,14 +1,19 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from .. import models
 from ..database import get_db
-from ..schemas import DoctorOut, SlotOut
+from ..schemas import DoctorCreate, DoctorOut, SlotOut
 from ..services import booking_service
 
 router = APIRouter(prefix="/doctors", tags=["doctors"])
+
+
+@router.post("", response_model=DoctorOut, status_code=status.HTTP_201_CREATED)
+def create_doctor(payload: DoctorCreate, db: Session = Depends(get_db)):
+    return booking_service.create_doctor(db, payload.name, payload.specialty)
 
 
 @router.get("", response_model=list[DoctorOut])

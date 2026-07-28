@@ -15,11 +15,32 @@ def _slot_end(start: datetime) -> datetime:
     return start + timedelta(minutes=SLOT_MINUTES)
 
 
+def create_doctor(db: Session, name: str, specialty: str | None = None) -> models.Doctor:
+    doctor = models.Doctor(name=name, specialty=specialty)
+    db.add(doctor)
+    db.commit()
+    db.refresh(doctor)
+    return doctor
+
+
 def get_doctor_or_404(db: Session, doctor_id: int) -> models.Doctor:
     doctor = db.query(models.Doctor).filter(models.Doctor.id == doctor_id).first()
     if not doctor:
         raise HTTPException(status_code=404, detail="Doctor not found")
     return doctor
+
+
+def create_patient(db: Session, name: str, email: str) -> models.Patient:
+    existing = db.query(models.Patient).filter(models.Patient.email == email).first()
+    if existing:
+        raise HTTPException(
+            status_code=409, detail="Patient with this email already exists"
+        )
+    patient = models.Patient(name=name, email=email)
+    db.add(patient)
+    db.commit()
+    db.refresh(patient)
+    return patient
 
 
 def get_patient_or_404(db: Session, patient_id: int) -> models.Patient:
