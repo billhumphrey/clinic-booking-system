@@ -294,36 +294,42 @@ control Fly.io's `flyctl` gives you.
 
 ## 4. AI reflection
 
-*(Drafted for my review and editing before submitting.)*
-
 **1. What I used AI for across the four sections**
 - **Section 1:** I sketched the domain model and trade-offs, then used the AI to
 turn that into a structured design doc with explicit concurrency reasoning.
 - **Section 2:** AI helped scaffold the FastAPI project structure, SQLAlchemy
 models, the service layer, routers, and the pytest suite; I reviewed and
-adjusted the code.
+adjusted the code. Later, I used AI to debug failing booking tests
+(double-booking and reschedule-conflict cases) and to add meaningful validation
+error messages in `booking_service._validate_slot` and related endpoints, so
+every failure returns a clear, client-friendly `detail` string.
 - **Section 3:** AI drafted the Dockerfile, `docker-compose.yml`, GitHub Actions
 workflows, and `render.yaml`.
 - **Section 4:** AI drafted this reflection for my review.
 
 **2. One AI suggestion that improved my work — and the prompt I used**
-I asked: *"How do we guarantee two patients can't book the same slot
-concurrently without relying only on application-level checks?"* The AI proposed
-a partial unique index on `(doctor_id, start_time) WHERE status='booked'` plus
-catching `IntegrityError` to return HTTP 409. This was better than row-level
-locking because it avoids deadlocks and works identically on SQLite and Postgres.
+I asked: *"The booking tests are failing on double-booking and reschedule
+conflicts, and the API currently returns generic 400s. How should I make the
+validation return meaningful, client-friendly error messages while still
+catching race conditions?"* The AI suggested centralizing all slot validation in
+`booking_service._validate_slot` with explicit `HTTPException` details for each
+failure mode (past slot, lead-time, boundary, outside hours, conflict), then
+wrapping the database `INSERT`/`UPDATE` in a try/except for `IntegrityError` to
+handle the remaining race case. That produced clearer API responses and removed
+the need for scattered validation logic across routers.
 
 **3. One AI output that was wrong or incomplete, and how I caught it**
-When I asked the AI to continue the implementation, it assumed the workspace was
-empty and planned to write the whole project from scratch. I caught this by
-listing the directory, which already contained a complete implementation. I
-redirected it to audit and fix the existing code instead, which avoided
-duplicate work.
+When I asked the AI to add conflict validation for bookings, its first draft
+treated every existing appointment at the same `start_time` as a conflict,
+including the appointment being rescheduled. That would have blocked a patient
+from rescheduling to their own current slot and broke `test_reschedule_moves_appointment_and_frees_original_slot`.
+I caught it by running the reschedule test suite, then added the
+`exclude_appointment_id` parameter to `_validate_slot` so the validation skips
+the appointment being moved.
 
 **4. Two decisions I made without AI**
-*(Placeholder — to be filled by me before submitting. Examples: choosing Render
-over Fly.io, deciding whether to rewrite the single large initial commit, or
-any design trade-off I would resolve differently.)*
+- **Choosing the slot-generation model (computed on read vs. materialized `slots` table):** I kept slots computed from `WorkingHours` and `Appointment` rather than pre-generating them. A materialized table is faster on read but introduces synchronization bugs whenever hours, bookings, cancellations, or reschedules change; for a five-doctor clinic the read-time computation cost is negligible, so I valued correctness over the marginal read-speed gain.
+- **Using 409 Conflict for "already cancelled":** The brief allowed either 400 or 409. I chose 409 because "the resource is in a state that conflicts with the requested operation" matches the semantics, and it keeps the API consistent with the double-booking 409.
 
 ---
 
