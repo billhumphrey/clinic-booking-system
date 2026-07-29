@@ -7,11 +7,11 @@ reschedule 30-minute appointment slots, without double-booking.
 
 ---
 
-## Deployment URL
+## Deployment
 
-Live at: `https://clinic-booking-system-1-cw4l.onrender.com/docs#/`
-
-The live deployment uses Render's managed PostgreSQL database (`clinic-booking-db`).
+- **Repository:** `https://github.com/billhumphrey/clinic-booking-system`
+- **Live application:** `https://clinic-booking-system-1gdd.onrender.com/docs#/`
+- **Database:** Render-managed PostgreSQL (`clinic-booking-db`)
 
 The repo is deployed via Render with automated deploys from GitHub Actions. The
 original setup steps are preserved below for reference:
@@ -251,16 +251,210 @@ set, matching what CI does.
 
 ---
 
+## Testing the API step-by-step
+
+The easiest way to explore the endpoints is via the interactive docs at
+`https://clinic-booking-system-1gdd.onrender.com/docs#/`. Below is the same
+flow using `curl`.
+
+All times are **naive UTC** (ISO 8601 without a timezone offset). The clinic
+defaults to working hours **09:00–17:00, every day**. Bookings must start on a
+30-minute boundary and be made **at least 1 hour in advance**.
+
+### 1. Create a doctor
+
+**`POST /doctors`**
+
+```bash
+curl -X POST https://clinic-booking-system-1gdd.onrender.com/doctors \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Dr. Ann", "specialty": "Cardiology"}'
+```
+
+Response:
+
+```json
+{"id": 1, "name": "Dr. Ann", "specialty": "Cardiology"}
+```
+
+### 2. List or create a patient
+
+**`GET /patients`** — see existing patients:
+
+```bash
+curl https://clinic-booking-system-1gdd.onrender.com/patients
+```
+
+If the list is empty, add one with **`POST /patients`**:
+
+```bash
+curl -X POST https://clinic-booking-system-1gdd.onrender.com/patients \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Bill Otieno", "email": "bill@example.com"}'
+```
+
+Response:
+
+```json
+{"id": 1, "name": "Bill Otieno", "email": "bill@example.com"}
+```
+
+### 3. Check the doctor’s availability
+
+**`GET /doctors/{doctor_id}/availability?date=YYYY-MM-DD`**
+
+Replace `1` with the doctor `id` returned in step 1, and pick a future date:
+
+```bash
+curl "https://clinic-booking-system-1gdd.onrender.com/doctors/1/availability?date=2026-08-03"
+```
+
+Response (a list of 30-minute slots still free):
+
+```json
+[
+  {"start_time": "2026-08-03T09:00:00", "end_time": "2026-08-03T09:30:00"},
+  {"start_time": "2026-08-03T09:30:00", "end_time": "2026-08-03T10:00:00"}
+]
+```
+
+### 4. Book an appointment
+
+**`POST /appointments`**
+
+Pick a `start_time` from the availability response:
+
+```bash
+curl -X POST https://clinic-booking-system-1gdd.onrender.com/appointments \
+  -H "Content-Type: application/json" \
+  -d '{
+    "doctor_id": 1,
+    "patient_id": 1,
+    "start_time": "2026-08-03T09:00:00"
+  }'
+```
+
+Response:
+
+```json
+{
+  "id": 1,
+  "doctor_id": 1,
+  "patient_id": 1,
+  "start_time": "2026-08-03T09:00:00",
+  "end_time": "2026-08-03T09:30:00",
+  "status": "booked",
+  "cancellation_reason": null
+}
+```
+
+### 5. Cancel an appointment
+
+**`PATCH /appointments/{appointment_id}/cancel`**
+
+```bash
+curl -X PATCH https://clinic-booking-system-1gdd.onrender.com/appointments/1/cancel \
+  -H "Content-Type: application/json" \
+  -d '{"reason": "Patient requested cancellation"}'
+```
+
+Response:
+
+```json
+{
+  "id": 1,
+  "doctor_id": 1,
+  "patient_id": 1,
+  "start_time": "2026-08-03T09:00:00",
+  "end_time": "2026-08-03T09:30:00",
+  "status": "cancelled",
+  "cancellation_reason": "Patient requested cancellation"
+}
+```
+
+### 6. Reschedule an appointment
+
+**`PATCH /appointments/{appointment_id}/reschedule`**
+
+Rescheduling requires the appointment to still be `booked`. First check
+availability to pick a new slot, then:
+
+```bash
+curl -X PATCH https://clinic-booking-system-1gdd.onrender.com/appointments/1/reschedule \
+  -H "Content-Type: application/json" \
+  -d '{"new_start_time": "2026-08-03T10:00:00"}'
+```
+
+Response:
+
+```json
+{
+  "id": 1,
+  "doctor_id": 1,
+  "patient_id": 1,
+  "start_time": "2026-08-03T10:00:00",
+  "end_time": "2026-08-03T10:30:00",
+  "status": "booked",
+  "cancellation_reason": null
+}
+```
+
+### 7. Block a time slot as a doctor
+
+Doctors can mark individual 30-minute slots as unavailable without creating an
+appointment.
+
+**`POST /doctors/{doctor_id}/blocked-slots`**
+
+```bash
+curl -X POST https://clinic-booking-system-1gdd.onrender.com/doctors/1/blocked-slots \
+  -H "Content-Type: application/json" \
+  -d '{
+    "start_time": "2026-08-03T11:00:00",
+    "reason": "Administrative meeting"
+  }'
+```
+
+Response:
+
+```json
+{
+  "id": 1,
+  "doctor_id": 1,
+  "start_time": "2026-08-03T11:00:00",
+  "end_time": "2026-08-03T11:30:00",
+  "reason": "Administrative meeting"
+}
+```
+
+### 8. View or unblock a blocked slot
+
+**`GET /doctors/{doctor_id}/blocked-slots?date=YYYY-MM-DD`** lists blocked
+slots for that day:
+
+```bash
+curl "https://clinic-booking-system-1gdd.onrender.com/doctors/1/blocked-slots?date=2026-08-03"
+```
+
+To remove the block (for example, if plans change), use
+**`DELETE /doctors/{doctor_id}/blocked-slots?start_time=...`**:
+
+```bash
+curl -X DELETE "https://clinic-booking-system-1gdd.onrender.com/doctors/1/blocked-slots?start_time=2026-08-03T11:00:00"
+```
+
+A successful deletion returns `204 No Content`.
+
+---
+
 ## CI/CD
 
-- **`.github/workflows/tests.yml`** — runs on every PR into `main` or
-  `develop`. Spins up a real Postgres 15 service container, installs
-  dependencies, and runs the full `pytest` suite against it. A failing test
-  fails the PR check.
-- **`.github/workflows/deploy.yml`** — runs on push to `main` only. It first
-  runs the same test job inline, then, only if tests pass, `curl`s Render's
-  deploy hook URL (stored as the `RENDER_DEPLOY_HOOK` repo secret) to trigger
-  a new deploy of the latest image.
+- **Pull requests into `main` or `develop`** trigger `tests.yml`. It spins up a
+  real Postgres 15 service container, installs dependencies, and runs the full
+  `pytest` suite. A failing test fails the PR check.
+- **Pushes to `main`** trigger `deploy.yml`. It re-runs the same test job, and
+  only if tests pass it `curl`s Render's deploy hook URL (stored as the
+  `RENDER_DEPLOY_HOOK` repo secret) to deploy the latest image to production.
 
 ### Deploying it yourself
 
