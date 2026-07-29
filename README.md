@@ -9,7 +9,7 @@ reschedule 30-minute appointment slots, without double-booking.
 
 ## Deployment URL
 
-`https://<your-render-service>.onrender.com` — **not yet deployed.**
+`https://clinic-booking-system-1-cw4l.onrender.com/docs#/` 
 
 The repo is deploy-ready: Dockerfile, GitHub Actions workflows (`tests.yml` and
 `deploy.yml`), and a Render deploy-hook integration are in place. The remaining
