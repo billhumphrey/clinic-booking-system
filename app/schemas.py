@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 def _naive_utc(dt: datetime) -> datetime:
@@ -38,7 +38,7 @@ class PatientCreate(BaseModel):
 class AppointmentCreate(BaseModel):
     doctor_id: int
     patient_id: int
-    start_time: datetime
+    start_time: datetime = Field(..., json_schema_extra={"example": "2026-07-29T10:00"})
 
     @field_validator("start_time")
     @classmethod
