@@ -540,6 +540,3 @@ the appointment being moved.
 - [x] Render web service deployed and public URL added to README.
 - [x] `RENDER_DEPLOY_HOOK` secret added to GitHub repo settings.
 
-The commit history currently begins with one large initial commit; all later
-changes are granular. If you prefer a fully granular history, rewrite it
-before making the repo public (only safe before anyone else has cloned it).
