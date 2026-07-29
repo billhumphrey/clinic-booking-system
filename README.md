@@ -313,7 +313,33 @@ Response:
 {"id": 1, "name": "Bill Otieno", "email": "bill@example.com"}
 ```
 
-### 3. Check the doctor’s availability
+### 3. Set the doctor’s working hours
+
+Doctors start with a default weekday schedule (09:00–17:00, Monday to Friday). You can override it by bulk-setting specific days, including weekends.
+
+**`POST /doctors/{doctor_id}/working-hours`**
+
+```bash
+curl -X POST https://clinic-booking-system-1gdd.onrender.com/doctors/1/working-hours \
+  -H "Content-Type: application/json" \
+  -d '[
+    {"day_of_week": "Monday", "start_time": "09:00:00", "end_time": "12:00:00"},
+    {"day_of_week": "Monday", "start_time": "13:00:00", "end_time": "17:00:00"},
+    {"day_of_week": "Wednesday", "start_time": "10:00:00", "end_time": "14:00:00"}
+  ]'
+```
+
+Response:
+
+```json
+[
+  {"id": 1, "doctor_id": 1, "day_of_week": "Monday", "start_time": "09:00:00", "end_time": "12:00:00"},
+  {"id": 2, "doctor_id": 1, "day_of_week": "Monday", "start_time": "13:00:00", "end_time": "17:00:00"},
+  {"id": 3, "doctor_id": 1, "day_of_week": "Wednesday", "start_time": "10:00:00", "end_time": "14:00:00"}
+]
+```
+
+### 4. Check the doctor’s availability
 
 **`GET /doctors/{doctor_id}/availability?date=YYYY-MM-DD`**
 
@@ -332,7 +358,7 @@ Response (a list of 30-minute slots still free):
 ]
 ```
 
-### 4. Book an appointment
+### 5. Book an appointment
 
 **`POST /appointments`**
 
@@ -362,7 +388,7 @@ Response:
 }
 ```
 
-### 5. Cancel an appointment
+### 6. Cancel an appointment
 
 **`PATCH /appointments/{appointment_id}/cancel`**
 
@@ -386,7 +412,7 @@ Response:
 }
 ```
 
-### 6. Reschedule an appointment
+### 7. Reschedule an appointment
 
 **`PATCH /appointments/{appointment_id}/reschedule`**
 
@@ -413,7 +439,7 @@ Response:
 }
 ```
 
-### 7. Block a time slot as a doctor
+### 8. Block a time slot as a doctor
 
 Doctors can mark individual 30-minute slots as unavailable without creating an
 appointment.
@@ -441,7 +467,7 @@ Response:
 }
 ```
 
-### 8. View or unblock a blocked slot
+### 9. View or unblock a blocked slot
 
 **`GET /doctors/{doctor_id}/blocked-slots?date=YYYY-MM-DD`** lists blocked
 slots for that day:
