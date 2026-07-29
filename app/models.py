@@ -42,7 +42,8 @@ class WorkingHours(Base):
     """
     One row per (doctor, day_of_week) availability block.
 
-    day_of_week follows Python's datetime.weekday() convention: 0=Monday ... 6=Sunday.
+    day_of_week is stored as a 0-6 weekday index (0=Monday ... 6=Sunday). The
+    API accepts full day names, common abbreviations, and numbers.
     A doctor can have more than one block per day (e.g. 09:00-12:00 and 13:00-17:00
     with a lunch gap), so uniqueness is NOT enforced on day_of_week alone.
     """
@@ -51,7 +52,7 @@ class WorkingHours(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     doctor_id = Column(Integer, ForeignKey("doctors.id"), nullable=False)
-    day_of_week = Column(Integer, nullable=False)  # 0-6
+    day_of_week = Column(Integer, nullable=False)  # 0=Monday .. 6=Sunday
     start_time = Column(Time, nullable=False)
     end_time = Column(Time, nullable=False)
 

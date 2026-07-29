@@ -1,9 +1,9 @@
-from datetime import datetime
+from datetime import datetime, time
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 
-from app.utils import as_utc, from_utc
+from app.utils import as_utc, format_day_of_week, from_utc, parse_day_of_week
 
 
 class DoctorOut(BaseModel):
@@ -102,3 +102,39 @@ class BlockedSlotOut(BaseModel):
     @classmethod
     def _serialize_datetime(cls, v: datetime) -> datetime:
         return from_utc(v)
+
+
+class WorkingHoursCreate(BaseModel):
+    day_of_week: str = Field(
+        ...,
+        description="Day name or abbreviation, e.g. 'Monday', 'Mon', 'Mo' (also accepts 0-6)",
+    )
+    start_time: time
+    end_time: time
+
+    @field_validator("day_of_week", mode="before")
+    @classmethod
+    def _normalize_day(cls, v):
+        return format_day_of_week(parse_day_of_week(v))
+
+    @model_validator(mode="after")
+    def _start_before_end(self):
+        if self.end_time <= self.start_time:
+            raise ValueError("end_time must be after start_time")
+        return self
+
+
+class WorkingHoursOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    doctor_id: int
+    day_of_week: str
+    start_time: time
+    end_time: time
+
+    @field_validator("day_of_week", mode="before")
+    @classmethod
+    def _format_day(cls, v):
+        if isinstance(v, int):
+            return format_day_of_week(v)
+        return v

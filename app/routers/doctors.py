@@ -12,6 +12,8 @@ from ..schemas import (
     DoctorCreate,
     DoctorOut,
     SlotOut,
+    WorkingHoursCreate,
+    WorkingHoursOut,
 )
 from ..services import booking_service
 from ..utils import utc_now
@@ -79,3 +81,22 @@ def get_doctor_appointments(doctor_id: int, db: Session = Depends(get_db)):
 @router.get("/{doctor_id}/availability", response_model=list[SlotOut])
 def get_availability(doctor_id: int, date: date, db: Session = Depends(get_db)):
     return booking_service.get_available_slots(db, doctor_id, date)
+
+
+@router.get("/{doctor_id}/working-hours", response_model=list[WorkingHoursOut])
+def list_working_hours(doctor_id: int, db: Session = Depends(get_db)):
+    return booking_service.get_working_hours(db, doctor_id)
+
+
+@router.post(
+    "/{doctor_id}/working-hours",
+    response_model=list[WorkingHoursOut],
+    status_code=status.HTTP_201_CREATED,
+)
+def set_working_hours(
+    doctor_id: int,
+    payload: list[WorkingHoursCreate],
+    db: Session = Depends(get_db),
+):
+    """Bulk-set the doctor's weekly availability. Replaces any existing schedule."""
+    return booking_service.set_working_hours(db, doctor_id, payload)

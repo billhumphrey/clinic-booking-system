@@ -2,7 +2,7 @@ from datetime import date, datetime, time, timedelta
 
 from app import models
 from app.services import booking_service
-from app.utils import utc_now
+from app.utils import DAY_NAMES, parse_day_of_week, utc_now
 from .conftest import next_valid_slot
 
 
@@ -308,10 +308,13 @@ def test_patient_double_booking_across_doctors_rejected(client, doctor, patient,
     second_doc = models.Doctor(name="Dr. Second", specialty="Dermatology")
     db_session.add(second_doc)
     db_session.flush()
-    for day in range(0, 7):
+    for day_name in DAY_NAMES:
         db_session.add(
             models.WorkingHours(
-                doctor_id=second_doc.id, day_of_week=day, start_time=time(9, 0), end_time=time(17, 0)
+                doctor_id=second_doc.id,
+                day_of_week=parse_day_of_week(day_name),
+                start_time=time(9, 0),
+                end_time=time(17, 0),
             )
         )
     db_session.commit()
