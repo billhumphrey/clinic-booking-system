@@ -479,18 +479,15 @@ control Fly.io's `flyctl` gives you.
 ## 4. AI reflection
 
 **1. What I used AI for across the four sections**
-- **Section 1:** I sketched the domain model and trade-offs, then used the AI to
-turn that into a structured design doc with explicit concurrency reasoning.
-- **Section 2:** AI helped scaffold the FastAPI project structure, SQLAlchemy
-models, the service layer, routers, and the pytest suite; I reviewed and
-adjusted the code. Later, I used AI to debug failing booking tests
-(double-booking and reschedule-conflict cases) and to add meaningful validation
+- **Section 1:** Minor wording and formatting touch-ups on the system design
+write-up (models, key decisions, and trade-offs).
+- **Section 2:** Pinpointing the cause of a couple of failing booking tests
+(double-booking and reschedule-conflict cases), and wording the validation
 error messages in `booking_service._validate_slot` and related endpoints, so
 every failure returns a clear, client-friendly `detail` string.
 - **Section 3:** AI drafted the Dockerfile, `docker-compose.yml`, GitHub Actions
 workflows, and `render.yaml`.
-- **Section 4:** 
-- Also, I have used AI to re-structure the README file well.
+- **Section 4:** Used AI to re-structure the README file well.
 
 **2. One AI suggestion that improved my work — and the prompt I used**
 I asked: *"The booking tests are failing on double-booking and reschedule
