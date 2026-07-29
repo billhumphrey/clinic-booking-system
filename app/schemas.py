@@ -73,3 +73,22 @@ class AppointmentOut(BaseModel):
 class SlotOut(BaseModel):
     start_time: datetime
     end_time: datetime
+
+
+class BlockedSlotCreate(BaseModel):
+    start_time: datetime
+    reason: Optional[str] = None
+
+    @field_validator("start_time")
+    @classmethod
+    def _normalize_start_time(cls, v: datetime) -> datetime:
+        return _naive_utc(v)
+
+
+class BlockedSlotOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    doctor_id: int
+    start_time: datetime
+    end_time: datetime
+    reason: Optional[str] = None

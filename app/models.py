@@ -33,6 +33,9 @@ class Doctor(Base):
         "WorkingHours", back_populates="doctor", cascade="all, delete-orphan"
     )
     appointments = relationship("Appointment", back_populates="doctor")
+    blocked_slots = relationship(
+        "BlockedSlot", back_populates="doctor", cascade="all, delete-orphan"
+    )
 
 
 class WorkingHours(Base):
@@ -98,5 +101,32 @@ class Appointment(Base):
         CheckConstraint(
             "status IN ('booked', 'cancelled')",
             name="ck_appointment_status",
+        ),
+    )
+
+
+class BlockedSlot(Base):
+    """
+    Explicitly blocked 30-minute slots for a doctor.
+    These are subtracted from the availability view but are not appointments.
+    """
+
+    __tablename__ = "blocked_slots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    doctor_id = Column(Integer, ForeignKey("doctors.id"), nullable=False)
+    start_time = Column(DateTime, nullable=False)
+    end_time = Column(DateTime, nullable=False)
+    reason = Column(String, nullable=True)
+    created_at = Column(DateTime, default=utc_now)
+
+    doctor = relationship("Doctor", back_populates="blocked_slots")
+
+    __table_args__ = (
+        Index(
+            "uq_doctor_blocked_slot",
+            "doctor_id",
+            "start_time",
+            unique=True,
         ),
     )

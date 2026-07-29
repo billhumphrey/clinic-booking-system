@@ -103,9 +103,13 @@ works identically on SQLite (dev) and Postgres (prod).
 
 | Method | Path | Success | Errors |
 |---|---|---|---|
+| `GET` | `/appointments?status=booked\|cancelled` | 200 | — |
 | `POST` | `/appointments` | 201 | 400 (past/lead-time/outside hours/misaligned), 404 (doctor/patient), 409 (conflict) |
 | `POST` | `/doctors` | 201 | 400 (bad input) |
 | `POST` | `/patients` | 201 | 400 (bad input), 409 (duplicate email) |
+| `POST` | `/doctors/{id}/blocked-slots` | 201 | 400 (past/lead-time/outside hours/misaligned), 404 (doctor), 409 (already blocked) |
+| `GET` | `/doctors/{id}/blocked-slots?date=YYYY-MM-DD` | 200 | 404 (doctor) |
+| `DELETE` | `/doctors/{id}/blocked-slots?start_time=YYYY-MM-DDTHH:MM:SS` | 204 | 404 (doctor/slot) |
 | `GET` | `/doctors/{id}/availability?date=YYYY-MM-DD` | 200 | 404 (doctor) |
 | `PATCH` | `/appointments/{id}/cancel` | 200 | 404 (appointment), 409 (already cancelled) |
 | `PATCH` | `/appointments/{id}/reschedule` | 200 | 400 (already cancelled / invalid new slot), 404, 409 (new slot conflict) |

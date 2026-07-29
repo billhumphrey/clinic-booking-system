@@ -13,6 +13,11 @@ from ..services import booking_service
 router = APIRouter(prefix="/appointments", tags=["appointments"])
 
 
+@router.get("", response_model=list[AppointmentOut])
+def list_appointments(status: str | None = None, db: Session = Depends(get_db)):
+    return booking_service.list_appointments(db, status)
+
+
 @router.post("", response_model=AppointmentOut, status_code=status.HTTP_201_CREATED)
 def book_appointment(payload: AppointmentCreate, db: Session = Depends(get_db)):
     return booking_service.create_appointment(

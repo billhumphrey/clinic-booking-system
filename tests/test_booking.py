@@ -22,6 +22,50 @@ def test_create_patient(client):
     assert body["email"] == "jane.doe@example.com"
 
 
+def test_block_slot_hides_from_availability(client, doctor):
+    slot = next_valid_slot()
+    resp = client.post(
+        f"/doctors/{doctor.id}/blocked-slots",
+        json={"start_time": slot.isoformat(), "reason": "Lunch break"},
+    )
+    assert resp.status_code == 201
+
+    avail = client.get(
+        f"/doctors/{doctor.id}/availability", params={"date": slot.date().isoformat()}
+    )
+    assert avail.status_code == 200
+    assert slot.isoformat() not in [s["start_time"] for s in avail.json()]
+
+
+def test_unblock_slot_restores_availability(client, doctor):
+    slot = next_valid_slot()
+    client.post(
+        f"/doctors/{doctor.id}/blocked-slots",
+        json={"start_time": slot.isoformat()},
+    )
+
+    del_resp = client.delete(
+        f"/doctors/{doctor.id}/blocked-slots",
+        params={"start_time": slot.isoformat()},
+    )
+    assert del_resp.status_code == 204
+
+    avail = client.get(
+        f"/doctors/{doctor.id}/availability", params={"date": slot.date().isoformat()}
+    )
+    assert avail.status_code == 200
+    assert slot.isoformat() in [s["start_time"] for s in avail.json()]
+
+
+def test_block_slot_invalid_doctor(client):
+    slot = next_valid_slot()
+    resp = client.post(
+        "/doctors/999/blocked-slots",
+        json={"start_time": slot.isoformat()},
+    )
+    assert resp.status_code == 404
+
+
 def test_successful_booking(client, doctor, patient):
     slot = next_valid_slot()
     resp = client.post(
@@ -32,6 +76,24 @@ def test_successful_booking(client, doctor, patient):
     body = resp.json()
     assert body["status"] == "booked"
     assert body["doctor_id"] == doctor.id
+
+
+def test_list_appointments(client, doctor, patient):
+    slot = next_valid_slot()
+    client.post(
+        "/appointments",
+        json={"doctor_id": doctor.id, "patient_id": patient.id, "start_time": slot.isoformat()},
+    )
+
+    resp = client.get("/appointments")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body) >= 1
+    assert any(a["doctor_id"] == doctor.id and a["patient_id"] == patient.id for a in body)
+
+    resp = client.get("/appointments", params={"status": "cancelled"})
+    assert resp.status_code == 200
+    assert all(a["status"] == "cancelled" for a in resp.json())
 
 
 def test_double_booking_rejected(client, doctor, patient):
