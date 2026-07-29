@@ -27,7 +27,7 @@ original setup steps are preserved below for reference:
 - Has many `WorkingHours`, has many `Appointment`
 
 **WorkingHours** — one row per recurring availability block
-- `id`, `doctor_id` (FK), `day_of_week` (0=Mon..6=Sun), `start_time`, `end_time`
+- `id`, `doctor_id` (FK), `day_of_week` (full day name, abbreviation, or 0=Mon..6=Sun), `start_time`, `end_time`
 - A doctor can have multiple rows per day (e.g. 09:00–12:00 and 13:00–17:00,
   with the lunch gap simply being the space between two rows). Recurring by
   day-of-week rather than by calendar date — see trade-offs below.
@@ -104,6 +104,8 @@ works identically on SQLite (dev) and Postgres (prod).
 | `GET` | `/doctors/{id}/blocked-slots?date=YYYY-MM-DD` | 200 | 404 (doctor) |
 | `DELETE` | `/doctors/{id}/blocked-slots?start_time=YYYY-MM-DDTHH:MM:SS` | 204 | 404 (doctor/slot) |
 | `GET` | `/doctors/{id}/availability?date=YYYY-MM-DD` | 200 | 404 (doctor) |
+| `GET` | `/doctors/{id}/working-hours` | 200 | 404 (doctor) |
+| `POST` | `/doctors/{id}/working-hours` | 201 | 400 (bad input), 404 (doctor) |
 | `GET` | `/doctors/{id}/appointments` | 200 | 404 (doctor) — lists booked, future appointments only |
 | `PATCH` | `/appointments/{id}/cancel` | 200 | 404 (appointment), 409 (already cancelled) |
 | `PATCH` | `/appointments/{id}/reschedule` | 200 | 400 (already cancelled / invalid new slot), 404, 409 (new slot conflict/blocked) |
@@ -162,14 +164,12 @@ works identically on SQLite (dev) and Postgres (prod).
    endpoint at real multi-clinic scale, but that's a "when you get there"
    concern, not a day-one one.
 
-6. **Working hours are global, not per-doctor (v1 simplification).** The
-   `WorkingHours` table exists and is designed to be per-doctor, but the API
-   currently uses a single shared default (09:00–17:00 clinic-local time, every
-   day) for all doctors. `DoctorCreate` accepts only `name` and `specialty`,
-   so there is no way to configure individual hours yet. The error message
-   "outside the doctor's working hours" is therefore slightly over-promising;
-   per-doctor overrides and weekend/holiday handling are the next logical
-   extension.
+6. **Per-doctor working hours with a shared default.** The
+   `WorkingHours` table is per-doctor; doctors with no explicit schedule fall
+   back to the shared default (09:00–17:00 clinic-local time, Monday to Friday).
+   `POST /doctors/{id}/working-hours` bulk-replaces a doctor's weekly schedule,
+   and `GET /doctors/{id}/availability?date=YYYY-MM-DD` now reflects that
+   schedule. Weekend/holiday one-off overrides are still a future extension.
 
 ### Ambiguities resolved
 
@@ -271,7 +271,8 @@ default timezone `Africa/Nairobi`, configurable via `CLINIC_TIMEZONE`). Naive
 values sent in requests are interpreted as clinic-local and stored as UTC;
 responses convert the stored UTC value back to clinic-local. Offset-aware inputs
 are also accepted. The clinic defaults to working hours **09:00–17:00
-clinic-local time, every day**. Bookings must start on a 30-minute boundary and
+clinic-local time, Monday to Friday**. Weekends are off unless a doctor explicitly
+adds them. Bookings must start on a 30-minute boundary and
 be made **at least 1 hour in advance**.
 
 ### 1. Create a doctor

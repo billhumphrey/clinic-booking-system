@@ -13,7 +13,7 @@ from sqlalchemy.pool import StaticPool
 from app.database import Base, get_db
 from app.main import app
 from app import models
-from app.utils import utc_now
+from app.utils import DAY_NAMES, parse_day_of_week, utc_now
 
 # Respect DATABASE_URL if set (CI runs this against a real Postgres service
 # container to match production). Otherwise use an in-memory SQLite database
@@ -85,10 +85,13 @@ def doctor(db_session):
     doc = models.Doctor(name="Dr. Test", specialty="General")
     db_session.add(doc)
     db_session.flush()
-    for day in range(0, 7):  # open every day of the week to keep test math simple
+    for day_name in DAY_NAMES:  # open every day of the week to keep test math simple
         db_session.add(
             models.WorkingHours(
-                doctor_id=doc.id, day_of_week=day, start_time=time(9, 0), end_time=time(17, 0)
+                doctor_id=doc.id,
+                day_of_week=parse_day_of_week(day_name),
+                start_time=time(9, 0),
+                end_time=time(17, 0),
             )
         )
     db_session.commit()

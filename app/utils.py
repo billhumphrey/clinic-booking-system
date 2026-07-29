@@ -42,3 +42,51 @@ def from_utc(dt: datetime) -> datetime:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(clinic_timezone()).replace(tzinfo=None)
+
+
+DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+_DAY_OF_WEEK_ALIASES: dict[str, int] = {}
+for i, name in enumerate(DAY_NAMES):
+    lower = name.lower()
+    _DAY_OF_WEEK_ALIASES[lower] = i
+    _DAY_OF_WEEK_ALIASES[lower + "s"] = i  # plural, e.g. "mondays"
+    _DAY_OF_WEEK_ALIASES[lower[:3]] = i    # e.g. "mon", "tue"
+    _DAY_OF_WEEK_ALIASES[lower[:2]] = i    # e.g. "mo", "tu"
+
+# Common non-first-three-letter short forms
+_DAY_OF_WEEK_ALIASES["tues"] = 1
+_DAY_OF_WEEK_ALIASES["thurs"] = 3
+_DAY_OF_WEEK_ALIASES["thur"] = 3
+
+# Unambiguous single-letter abbreviations
+_DAY_OF_WEEK_ALIASES["m"] = 0
+_DAY_OF_WEEK_ALIASES["w"] = 2
+_DAY_OF_WEEK_ALIASES["f"] = 4
+
+
+def parse_day_of_week(value: int | str) -> int:
+    """Convert a day name, abbreviation, or 0-6 number to a weekday index."""
+    if isinstance(value, int):
+        if 0 <= value <= 6:
+            return value
+        raise ValueError(f"Invalid day_of_week number: {value}")
+
+    s = str(value).strip().lower()
+    if s in _DAY_OF_WEEK_ALIASES:
+        return _DAY_OF_WEEK_ALIASES[s]
+
+    if s.isdigit():
+        n = int(s)
+        if 0 <= n <= 6:
+            return n
+        raise ValueError(f"Invalid day_of_week number: {value}")
+
+    raise ValueError(f"Invalid day_of_week: {value}")
+
+
+def format_day_of_week(day_index: int) -> str:
+    """Convert a 0-6 weekday index to its full name."""
+    if 0 <= day_index <= 6:
+        return DAY_NAMES[day_index]
+    raise ValueError(f"Invalid day_of_week number: {day_index}")

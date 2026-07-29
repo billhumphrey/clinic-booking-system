@@ -5,7 +5,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import models
-from ..utils import as_utc, clinic_timezone, utc_now
+from ..schemas import WorkingHoursCreate
+from ..utils import as_utc, clinic_timezone, parse_day_of_week, utc_now
 
 SLOT_MINUTES = 30
 MIN_LEAD_TIME = timedelta(hours=1)
@@ -16,17 +17,48 @@ DEFAULT_END_TIME = time(17, 0)
 
 def _default_working_hours(day: date_cls) -> list[tuple[datetime, datetime]]:
     """
-    All doctors share the same working hours for this assessment (v1
-    simplification: not per-doctor yet). The hours 09:00-17:00 are expressed
-    in clinic-local time and converted to UTC for the requested calendar day
-    so slot generation and validation stay consistent with the timezone edge.
+    Default fallback hours used when a doctor has no explicit WorkingHours
+    rows. The clinic is open 09:00-17:00 clinic-local time, Monday to Friday
+    only. Weekends are off unless the doctor explicitly adds them.
     """
+    if day.weekday() >= 5:  # Saturday or Sunday
+        return []
+
     tz = clinic_timezone()
     start_local = datetime.combine(day, DEFAULT_START_TIME).replace(tzinfo=tz)
     end_local = datetime.combine(day, DEFAULT_END_TIME).replace(tzinfo=tz)
     start_utc = start_local.astimezone(timezone.utc).replace(tzinfo=None)
     end_utc = end_local.astimezone(timezone.utc).replace(tzinfo=None)
     return [(start_utc, end_utc)]
+
+
+def _doctor_working_hours(
+    db: Session, doctor_id: int, day: date_cls
+) -> list[tuple[datetime, datetime]]:
+    """Return the doctor's availability blocks for the given calendar day."""
+    rows = (
+        db.query(models.WorkingHours)
+        .filter(models.WorkingHours.doctor_id == doctor_id)
+        .order_by(models.WorkingHours.day_of_week, models.WorkingHours.start_time)
+        .all()
+    )
+    if not rows:
+        return _default_working_hours(day)
+
+    tz = clinic_timezone()
+    blocks = []
+    for row in rows:
+        if row.day_of_week != day.weekday():
+            continue
+        start_local = datetime.combine(day, row.start_time).replace(tzinfo=tz)
+        end_local = datetime.combine(day, row.end_time).replace(tzinfo=tz)
+        blocks.append(
+            (
+                start_local.astimezone(timezone.utc).replace(tzinfo=None),
+                end_local.astimezone(timezone.utc).replace(tzinfo=None),
+            )
+        )
+    return blocks
 
 
 def _day_bounds(day: date_cls) -> tuple[datetime, datetime]:
@@ -49,6 +81,40 @@ def create_doctor(db: Session, name: str, specialty: str | None = None) -> model
     db.commit()
     db.refresh(doctor)
     return doctor
+
+
+def get_working_hours(db: Session, doctor_id: int) -> list[models.WorkingHours]:
+    get_doctor_or_404(db, doctor_id)
+    return (
+        db.query(models.WorkingHours)
+        .filter(models.WorkingHours.doctor_id == doctor_id)
+        .order_by(models.WorkingHours.day_of_week, models.WorkingHours.start_time)
+        .all()
+    )
+
+
+def set_working_hours(
+    db: Session, doctor_id: int, entries: list[WorkingHoursCreate]
+) -> list[models.WorkingHours]:
+    """Replace the doctor's entire weekly schedule with the provided bulk set."""
+    get_doctor_or_404(db, doctor_id)
+
+    db.query(models.WorkingHours).filter(models.WorkingHours.doctor_id == doctor_id).delete()
+    created = []
+    for entry in entries:
+        wh = models.WorkingHours(
+            doctor_id=doctor_id,
+            day_of_week=parse_day_of_week(entry.day_of_week),
+            start_time=entry.start_time,
+            end_time=entry.end_time,
+        )
+        db.add(wh)
+        created.append(wh)
+
+    db.commit()
+    for wh in created:
+        db.refresh(wh)
+    return created
 
 
 def get_doctor_or_404(db: Session, doctor_id: int) -> models.Doctor:
@@ -110,9 +176,8 @@ def list_appointments(
 
 
 def _is_within_working_hours(db: Session, doctor_id: int, start: datetime) -> bool:
-    # db/doctor_id are kept for future per-doctor overrides; default is shared.
     slot_end = _slot_end(start)
-    for block_start, block_end in _default_working_hours(start.date()):
+    for block_start, block_end in _doctor_working_hours(db, doctor_id, start.date()):
         if block_start <= start and slot_end <= block_end:
             return True
     return False
@@ -147,7 +212,7 @@ def get_available_slots(db: Session, doctor_id: int, day: date_cls) -> list[dict
 
     now = utc_now()
     slots = []
-    for block_start, block_end in _default_working_hours(day):
+    for block_start, block_end in _doctor_working_hours(db, doctor_id, day):
         cur = block_start
         while cur + timedelta(minutes=SLOT_MINUTES) <= block_end:
             if (
