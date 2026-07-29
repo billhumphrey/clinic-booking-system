@@ -171,7 +171,7 @@ works identically on SQLite (dev) and Postgres (prod).
    per-doctor overrides and weekend/holiday handling are the next logical
    extension.
 
-### Ambiguities resolved (per the assessment's own instruction to flag these)
+### Ambiguities resolved
 
 - **Cancelled appointment's `cancellation_reason`:** required on cancel
   (the brief says "cancel with a reason"), nullable in the schema since only
