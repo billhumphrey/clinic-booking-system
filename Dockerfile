@@ -13,6 +13,5 @@ COPY . .
 
 EXPOSE 8000
 
-# Seed is idempotent (no-ops if doctors already exist), so it's safe to run
-# on every container start including redeploys.
+# Creates database tables and reports current counts on every container start.
 CMD ["sh", "-c", "python -m app.seed && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
