@@ -69,8 +69,9 @@ recomputing per request.
 This is the part of the brief I took most literally: "be explicit about the
 mechanism, not just 'we validate it.'"
 
-The actual guarantee is a **partial unique index** on
-`appointments(doctor_id, start_time) WHERE status = 'booked'`
+The actual guarantee is a pair of **partial unique indexes** on
+`appointments(doctor_id, start_time) WHERE status = 'booked'` and
+`appointments(patient_id, start_time) WHERE status = 'booked'`
 (see `app/models.py`, `Index(..., sqlite_where=..., postgresql_where=...)`).
 
 The application layer (`booking_service._validate_slot`) still does an
@@ -78,10 +79,10 @@ up-front `SELECT` for a conflicting booked row, purely so a normal (non-race)
 request gets a fast, clean 409 without ever hitting the database's
 constraint-violation path. But that `SELECT` + later `INSERT` is not
 atomic — two requests can both pass the `SELECT` check for the same slot
-before either commits. **The partial unique index is what actually closes
+before either commits. **The partial unique indexes are what actually close
 that race**: if both `INSERT`s reach the database, only one commits; the
 second raises `IntegrityError`, which `create_appointment` catches and turns
-into an HTTP 409. Cancelled appointments are excluded from the index (via the
+into an HTTP 409. Cancelled appointments are excluded from the indexes (via the
 `WHERE` clause) so a freed slot can be rebooked without any special-casing.
 
 I did *not* reach for `SELECT ... FOR UPDATE` row locking or
@@ -95,18 +96,18 @@ works identically on SQLite (dev) and Postgres (prod).
 
 | Method | Path | Success | Errors |
 |---|---|---|---|
-| `GET` | `/appointments?status=booked\|cancelled` | 200 | — |
-| `POST` | `/appointments` | 201 | 400 (past/lead-time/outside hours/misaligned), 404 (doctor/patient), 409 (conflict) |
+| `GET` | `/appointments?status=booked\|cancelled` | 200 | 422 (invalid status) |
+| `POST` | `/appointments` | 201 | 400 (past/lead-time/outside hours/misaligned), 404 (doctor/patient), 409 (conflict/blocked) |
 | `POST` | `/doctors` | 201 | 400 (bad input) |
 | `POST` | `/patients` | 201 | 400 (bad input), 409 (duplicate email) |
 | `POST` | `/doctors/{id}/blocked-slots` | 201 | 400 (past/lead-time/outside hours/misaligned), 404 (doctor), 409 (already blocked) |
 | `GET` | `/doctors/{id}/blocked-slots?date=YYYY-MM-DD` | 200 | 404 (doctor) |
 | `DELETE` | `/doctors/{id}/blocked-slots?start_time=YYYY-MM-DDTHH:MM:SS` | 204 | 404 (doctor/slot) |
 | `GET` | `/doctors/{id}/availability?date=YYYY-MM-DD` | 200 | 404 (doctor) |
-| `GET` | `/doctors/{id}/appointments` | 200 | 404 (doctor) |
+| `GET` | `/doctors/{id}/appointments` | 200 | 404 (doctor) — lists booked, future appointments only |
 | `PATCH` | `/appointments/{id}/cancel` | 200 | 404 (appointment), 409 (already cancelled) |
-| `PATCH` | `/appointments/{id}/reschedule` | 200 | 400 (already cancelled / invalid new slot), 404, 409 (new slot conflict) |
-| `GET` | `/patients/{id}/appointments` | 200 | 404 (patient) |
+| `PATCH` | `/appointments/{id}/reschedule` | 200 | 400 (already cancelled / invalid new slot), 404, 409 (new slot conflict/blocked) |
+| `GET` | `/patients/{id}/appointments` | 200 | 404 (patient) — lists booked, future appointments only |
 | `GET` | `/doctors` | 200 | — |
 | `GET` | `/patients` | 200 | — |
 | `GET` | `/health` | 200 | — |
@@ -140,14 +141,16 @@ works identically on SQLite (dev) and Postgres (prod).
    things I'd add — and I've said so explicitly rather than silently
    picking the simpler option and hoping it doesn't matter.
 
-4. **Timezones: everything is naive UTC.** `start_time`/`end_time` are naive
-   `datetime`s, and the API expects/returns them as such (ISO 8601 without an
-   offset, uniformly UTC). For a real single-clinic deployment this needs a
-   `timezone` field on `Doctor` (or a clinic-level setting) and
-   timezone-aware datetimes throughout — I scoped that out for this
-   assessment rather than build partial timezone support that's *more*
-   dangerous than none (silently-wrong times are worse than obviously-naive
-   ones). Flagged explicitly, not silently assumed away.
+4. **Timezones: Clinic timezone at the edge, UTC internally.** Naive
+   `start_time`/`end_time` values are interpreted as clinic-local time
+   (default `Africa/Nairobi`, configurable via `CLINIC_TIMEZONE`) and stored
+   as naive UTC. Offset-aware ISO 8601 inputs are also accepted and converted
+   to UTC. Responses convert the stored UTC value back to the clinic-local
+   naive convention, so the same value can be sent back to book or reschedule.
+   This fixes the production risk of the server comparing a local time against
+   UTC `now()`. A full `TIMESTAMPTZ` switch is the natural next step once the
+   system moves to a Postgres-only deployment and wants offset-aware values
+   end-to-end.
 
 5. **Scaling beyond one small clinic.** The natural extension point is a
    `Clinic` model that `Doctor` belongs to, with all queries scoped by
@@ -158,6 +161,15 @@ works identically on SQLite (dev) and Postgres (prod).
    connection pooling tuning and probably read replicas for the availability
    endpoint at real multi-clinic scale, but that's a "when you get there"
    concern, not a day-one one.
+
+6. **Working hours are global, not per-doctor (v1 simplification).** The
+   `WorkingHours` table exists and is designed to be per-doctor, but the API
+   currently uses a single shared default (09:00–17:00 clinic-local time, every
+   day) for all doctors. `DoctorCreate` accepts only `name` and `specialty`,
+   so there is no way to configure individual hours yet. The error message
+   "outside the doctor's working hours" is therefore slightly over-promising;
+   per-doctor overrides and weekend/holiday handling are the next logical
+   extension.
 
 ### Ambiguities resolved (per the assessment's own instruction to flag these)
 
@@ -254,9 +266,13 @@ The easiest way to explore the endpoints is via the interactive docs at
 `https://clinic-booking-system-1gdd.onrender.com/docs#/`. Below is the same
 flow using `curl`.
 
-All times are **naive UTC** (ISO 8601 without a timezone offset). The clinic
-defaults to working hours **09:00–17:00, every day**. Bookings must start on a
-30-minute boundary and be made **at least 1 hour in advance**.
+All times are **naive clinic-local time** (ISO 8601 without a timezone offset,
+default timezone `Africa/Nairobi`, configurable via `CLINIC_TIMEZONE`). Naive
+values sent in requests are interpreted as clinic-local and stored as UTC;
+responses convert the stored UTC value back to clinic-local. Offset-aware inputs
+are also accepted. The clinic defaults to working hours **09:00–17:00
+clinic-local time, every day**. Bookings must start on a 30-minute boundary and
+be made **at least 1 hour in advance**.
 
 ### 1. Create a doctor
 

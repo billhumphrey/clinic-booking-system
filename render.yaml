@@ -16,6 +16,8 @@ services:
           property: connectionString
       - key: PORT
         value: "8000"
+      - key: CLINIC_TIMEZONE
+        value: Africa/Nairobi
 
 databases:
   - name: clinic-booking-db

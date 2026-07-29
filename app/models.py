@@ -86,13 +86,22 @@ class Appointment(Base):
     patient = relationship("Patient", back_populates="appointments")
 
     __table_args__ = (
-        # This is the real double-booking guarantee, not the application-level
-        # query in booking_service. Only ONE row with status='booked' may exist
-        # per (doctor_id, start_time); cancelled rows are excluded via the
-        # partial index so a freed slot can be rebooked without deleting history.
+        # Only ONE row with status='booked' may exist per (doctor_id, start_time);
+        # cancelled rows are excluded via the partial index so a freed slot can be
+        # rebooked without deleting history.
         Index(
             "uq_doctor_slot_when_booked",
             "doctor_id",
+            "start_time",
+            unique=True,
+            sqlite_where=(status == "booked"),
+            postgresql_where=(status == "booked"),
+        ),
+        # Same guarantee on the patient side: a patient cannot hold two booked
+        # appointments at the same instant (regardless of doctor).
+        Index(
+            "uq_patient_slot_when_booked",
+            "patient_id",
             "start_time",
             unique=True,
             sqlite_where=(status == "booked"),
