@@ -111,9 +111,6 @@ works identically on SQLite (dev) and Postgres (prod).
 | `GET` | `/patients` | 200 | — |
 | `GET` | `/health` | 200 | — |
 
-`GET /doctors`, `GET /patients`, and `GET /doctors/{id}/appointments` aren't in the
-brief's required list but exist so the API is explorable without touching the
-DB directly (e.g. to get valid `doctor_id`/`patient_id` values for the demo).
 
 ### Key trade-offs
 
@@ -492,7 +489,8 @@ error messages in `booking_service._validate_slot` and related endpoints, so
 every failure returns a clear, client-friendly `detail` string.
 - **Section 3:** AI drafted the Dockerfile, `docker-compose.yml`, GitHub Actions
 workflows, and `render.yaml`.
-- **Section 4:** AI drafted this reflection for my review.
+- **Section 4:** 
+- Also, I have used AI to re-structure the README file well.
 
 **2. One AI suggestion that improved my work — and the prompt I used**
 I asked: *"The booking tests are failing on double-booking and reschedule
@@ -516,7 +514,7 @@ the appointment being moved.
 
 **4. Two decisions I made without AI**
 - **Choosing the slot-generation model (computed on read vs. materialized `slots` table):** I kept slots computed from `WorkingHours` and `Appointment` rather than pre-generating them. A materialized table is faster on read but introduces synchronization bugs whenever hours, bookings, cancellations, or reschedules change; for a five-doctor clinic the read-time computation cost is negligible, so I valued correctness over the marginal read-speed gain.
-- **Using 409 Conflict for "already cancelled":** The brief allowed either 400 or 409. I chose 409 because "the resource is in a state that conflicts with the requested operation" matches the semantics, and it keeps the API consistent with the double-booking 409.
+- **Setting up the project:** I planned and set up the project myself, drafting the overall system design, including the domain models, the full set of API endpoints, the database schema and setup, and the deployment approach.
 
 ---
 
