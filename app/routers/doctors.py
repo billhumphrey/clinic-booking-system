@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from .. import models
 from ..database import get_db
 from ..schemas import (
+    AppointmentOut,
     BlockedSlotCreate,
     BlockedSlotOut,
     DoctorCreate,
@@ -58,6 +59,16 @@ def delete_blocked_slot(
     db: Session = Depends(get_db),
 ):
     booking_service.unblock_slot(db, doctor_id, start_time)
+
+@router.get("/{doctor_id}/appointments", response_model=list[AppointmentOut])
+def get_doctor_appointments(doctor_id: int, db: Session = Depends(get_db)):
+    booking_service.get_doctor_or_404(db, doctor_id)
+    return (
+        db.query(models.Appointment)
+        .filter(models.Appointment.doctor_id == doctor_id)
+        .order_by(models.Appointment.start_time.asc())
+        .all()
+    )
 
 
 @router.get("/{doctor_id}/availability", response_model=list[SlotOut])
