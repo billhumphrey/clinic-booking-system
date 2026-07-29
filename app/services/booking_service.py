@@ -1,12 +1,11 @@
-from datetime import datetime, timedelta, time, date as date_cls
+from datetime import datetime, timedelta, time, timezone, date as date_cls
 
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import models
-from ..schemas import _naive_utc
-from ..utils import utc_now
+from ..utils import as_utc, clinic_timezone, utc_now
 
 SLOT_MINUTES = 30
 MIN_LEAD_TIME = timedelta(hours=1)
@@ -15,13 +14,29 @@ DEFAULT_START_TIME = time(9, 0)
 DEFAULT_END_TIME = time(17, 0)
 
 
-def _default_working_hours(day_of_week: int) -> list[tuple[time, time]]:
+def _default_working_hours(day: date_cls) -> list[tuple[datetime, datetime]]:
     """
-    All doctors share the same working hours for this assessment.
-    Slots are generated from this function instead of the DB so availability
-    is always computed fresh and only excludes booked/blocked slots.
+    All doctors share the same working hours for this assessment (v1
+    simplification: not per-doctor yet). The hours 09:00-17:00 are expressed
+    in clinic-local time and converted to UTC for the requested calendar day
+    so slot generation and validation stay consistent with the timezone edge.
     """
-    return [(DEFAULT_START_TIME, DEFAULT_END_TIME)]
+    tz = clinic_timezone()
+    start_local = datetime.combine(day, DEFAULT_START_TIME).replace(tzinfo=tz)
+    end_local = datetime.combine(day, DEFAULT_END_TIME).replace(tzinfo=tz)
+    start_utc = start_local.astimezone(timezone.utc).replace(tzinfo=None)
+    end_utc = end_local.astimezone(timezone.utc).replace(tzinfo=None)
+    return [(start_utc, end_utc)]
+
+
+def _day_bounds(day: date_cls) -> tuple[datetime, datetime]:
+    """Return naive UTC (start, end) for the given clinic-local calendar day."""
+    tz = clinic_timezone()
+    day_start_local = datetime.combine(day, datetime.min.time()).replace(tzinfo=tz)
+    day_end_local = day_start_local + timedelta(days=1)
+    day_start_utc = day_start_local.astimezone(timezone.utc).replace(tzinfo=None)
+    day_end_utc = day_end_local.astimezone(timezone.utc).replace(tzinfo=None)
+    return (day_start_utc, day_end_utc)
 
 
 def _slot_end(start: datetime) -> datetime:
@@ -46,8 +61,7 @@ def get_doctor_or_404(db: Session, doctor_id: int) -> models.Doctor:
 def _blocked_slots_for_day(
     db: Session, doctor_id: int, day: date_cls
 ) -> list[models.BlockedSlot]:
-    day_start = datetime.combine(day, datetime.min.time())
-    day_end = day_start + timedelta(days=1)
+    day_start, day_end = _day_bounds(day)
     return (
         db.query(models.BlockedSlot)
         .filter(
@@ -97,9 +111,9 @@ def list_appointments(
 
 def _is_within_working_hours(db: Session, doctor_id: int, start: datetime) -> bool:
     # db/doctor_id are kept for future per-doctor overrides; default is shared.
-    slot_end_time = _slot_end(start).time()
-    for block_start, block_end in _default_working_hours(start.weekday()):
-        if block_start <= start.time() and slot_end_time <= block_end:
+    slot_end = _slot_end(start)
+    for block_start, block_end in _default_working_hours(start.date()):
+        if block_start <= start and slot_end <= block_end:
             return True
     return False
 
@@ -114,8 +128,7 @@ def get_available_slots(db: Session, doctor_id: int, day: date_cls) -> list[dict
     would need to change.
     """
     get_doctor_or_404(db, doctor_id)
-    day_start = datetime.combine(day, datetime.min.time())
-    day_end = day_start + timedelta(days=1)
+    day_start, day_end = _day_bounds(day)
 
     booked_rows = (
         db.query(models.Appointment.start_time)
@@ -134,10 +147,9 @@ def get_available_slots(db: Session, doctor_id: int, day: date_cls) -> list[dict
 
     now = utc_now()
     slots = []
-    for block_start, block_end in _default_working_hours(day.weekday()):
-        cur = datetime.combine(day, block_start)
-        block_end_dt = datetime.combine(day, block_end)
-        while cur + timedelta(minutes=SLOT_MINUTES) <= block_end_dt:
+    for block_start, block_end in _default_working_hours(day):
+        cur = block_start
+        while cur + timedelta(minutes=SLOT_MINUTES) <= block_end:
             if (
                 cur not in booked_starts
                 and cur not in blocked_starts
@@ -178,7 +190,7 @@ def list_blocked_slots(
 
 
 def unblock_slot(db: Session, doctor_id: int, start_time: datetime) -> None:
-    start_time = _naive_utc(start_time)
+    start_time = as_utc(start_time)
     blocked = (
         db.query(models.BlockedSlot)
         .filter(
@@ -198,6 +210,7 @@ def _validate_slot(
     doctor_id: int,
     start_time: datetime,
     exclude_appointment_id: int | None = None,
+    patient_id: int | None = None,
 ):
     now = utc_now()
 
@@ -219,16 +232,43 @@ def _validate_slot(
             status_code=400, detail="Requested slot is outside the doctor's working hours"
         )
 
-    conflict_query = db.query(models.Appointment).filter(
+    blocked = (
+        db.query(models.BlockedSlot)
+        .filter(
+            models.BlockedSlot.doctor_id == doctor_id,
+            models.BlockedSlot.start_time == start_time,
+        )
+        .first()
+    )
+    if blocked is not None:
+        raise HTTPException(status_code=409, detail="Slot is blocked")
+
+    doctor_conflict = db.query(models.Appointment).filter(
         models.Appointment.doctor_id == doctor_id,
         models.Appointment.start_time == start_time,
         models.Appointment.status == models.AppointmentStatus.booked,
     )
     if exclude_appointment_id is not None:
-        conflict_query = conflict_query.filter(models.Appointment.id != exclude_appointment_id)
+        doctor_conflict = doctor_conflict.filter(models.Appointment.id != exclude_appointment_id)
 
-    if conflict_query.first() is not None:
+    if doctor_conflict.first() is not None:
         raise HTTPException(status_code=409, detail="Slot is already booked")
+
+    if patient_id is not None:
+        patient_conflict = db.query(models.Appointment).filter(
+            models.Appointment.patient_id == patient_id,
+            models.Appointment.start_time == start_time,
+            models.Appointment.status == models.AppointmentStatus.booked,
+        )
+        if exclude_appointment_id is not None:
+            patient_conflict = patient_conflict.filter(
+                models.Appointment.id != exclude_appointment_id
+            )
+
+        if patient_conflict.first() is not None:
+            raise HTTPException(
+                status_code=409, detail="Patient already has an appointment at this time"
+            )
 
 
 def create_appointment(
@@ -236,7 +276,7 @@ def create_appointment(
 ) -> models.Appointment:
     get_doctor_or_404(db, doctor_id)
     get_patient_or_404(db, patient_id)
-    _validate_slot(db, doctor_id, start_time)
+    _validate_slot(db, doctor_id, start_time, patient_id=patient_id)
 
     appointment = models.Appointment(
         doctor_id=doctor_id,
@@ -250,11 +290,12 @@ def create_appointment(
         db.commit()
     except IntegrityError:
         # Two requests raced past the application-level check in _validate_slot.
-        # The partial unique index on (doctor_id, start_time) WHERE status='booked'
-        # is what actually prevents the double booking; this except clause just
-        # turns that DB-level rejection into a clean 409 for the client.
+        # The partial unique indexes on (doctor_id, start_time) and
+        # (patient_id, start_time) WHERE status='booked' are what actually
+        # prevent the double booking; this except clause just turns that
+        # DB-level rejection into a clean 409 for the client.
         db.rollback()
-        raise HTTPException(status_code=409, detail="Slot is already booked")
+        raise HTTPException(status_code=409, detail="Conflict with existing appointment")
 
     db.refresh(appointment)
     return appointment
@@ -279,7 +320,13 @@ def reschedule_appointment(
     if appt.status == models.AppointmentStatus.cancelled:
         raise HTTPException(status_code=400, detail="Cannot reschedule a cancelled appointment")
 
-    _validate_slot(db, appt.doctor_id, new_start_time, exclude_appointment_id=appt.id)
+    _validate_slot(
+        db,
+        appt.doctor_id,
+        new_start_time,
+        exclude_appointment_id=appt.id,
+        patient_id=appt.patient_id,
+    )
 
     appt.start_time = new_start_time
     appt.end_time = _slot_end(new_start_time)
@@ -287,7 +334,7 @@ def reschedule_appointment(
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status_code=409, detail="Slot is already booked")
+        raise HTTPException(status_code=409, detail="Conflict with existing appointment")
 
     db.refresh(appt)
     return appt

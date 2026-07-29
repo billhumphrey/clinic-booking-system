@@ -1,6 +1,9 @@
 import os
 from datetime import time, timedelta
 
+
+os.environ.setdefault("CLINIC_TIMEZONE", "UTC")
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine

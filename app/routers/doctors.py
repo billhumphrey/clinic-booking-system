@@ -14,6 +14,7 @@ from ..schemas import (
     SlotOut,
 )
 from ..services import booking_service
+from ..utils import utc_now
 
 router = APIRouter(prefix="/doctors", tags=["doctors"])
 
@@ -65,7 +66,11 @@ def get_doctor_appointments(doctor_id: int, db: Session = Depends(get_db)):
     booking_service.get_doctor_or_404(db, doctor_id)
     return (
         db.query(models.Appointment)
-        .filter(models.Appointment.doctor_id == doctor_id)
+        .filter(
+            models.Appointment.doctor_id == doctor_id,
+            models.Appointment.status == models.AppointmentStatus.booked,
+            models.Appointment.start_time >= utc_now(),
+        )
         .order_by(models.Appointment.start_time.asc())
         .all()
     )

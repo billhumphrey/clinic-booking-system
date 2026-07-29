@@ -1,5 +1,7 @@
-from datetime import timedelta
+from datetime import date, datetime, time, timedelta
 
+from app import models
+from app.services import booking_service
 from app.utils import utc_now
 from .conftest import next_valid_slot
 
@@ -256,3 +258,156 @@ def test_patient_upcoming_appointments_sorted(client, doctor, patient):
     results = resp.json()
     assert len(results) == 2
     assert results[0]["start_time"] < results[1]["start_time"]
+
+
+def test_booking_blocked_slot_rejected(client, doctor, patient):
+    slot = next_valid_slot()
+    block = client.post(
+        f"/doctors/{doctor.id}/blocked-slots",
+        json={"start_time": slot.isoformat(), "reason": "Conference"},
+    )
+    assert block.status_code == 201
+
+    resp = client.post(
+        "/appointments",
+        json={"doctor_id": doctor.id, "patient_id": patient.id, "start_time": slot.isoformat()},
+    )
+    assert resp.status_code == 409
+
+
+def test_reschedule_blocked_slot_rejected(client, doctor, patient):
+    slot_a = next_valid_slot(hour=10)
+    slot_b = next_valid_slot(hour=11)
+    blocked = next_valid_slot(hour=14)
+
+    appt = client.post(
+        "/appointments",
+        json={"doctor_id": doctor.id, "patient_id": patient.id, "start_time": slot_a.isoformat()},
+    ).json()
+
+    client.post(
+        f"/doctors/{doctor.id}/blocked-slots",
+        json={"start_time": blocked.isoformat(), "reason": "Lunch"},
+    )
+
+    resp = client.patch(
+        f"/appointments/{appt['id']}/reschedule",
+        json={"new_start_time": blocked.isoformat()},
+    )
+    assert resp.status_code == 409
+
+    # sanity: the original target is still free for rescheduling
+    ok = client.patch(
+        f"/appointments/{appt['id']}/reschedule",
+        json={"new_start_time": slot_b.isoformat()},
+    )
+    assert ok.status_code == 200
+
+
+def test_patient_double_booking_across_doctors_rejected(client, doctor, patient, db_session):
+    second_doc = models.Doctor(name="Dr. Second", specialty="Dermatology")
+    db_session.add(second_doc)
+    db_session.flush()
+    for day in range(0, 7):
+        db_session.add(
+            models.WorkingHours(
+                doctor_id=second_doc.id, day_of_week=day, start_time=time(9, 0), end_time=time(17, 0)
+            )
+        )
+    db_session.commit()
+    db_session.refresh(second_doc)
+
+    slot = next_valid_slot()
+    payload_a = {"doctor_id": doctor.id, "patient_id": patient.id, "start_time": slot.isoformat()}
+    payload_b = {"doctor_id": second_doc.id, "patient_id": patient.id, "start_time": slot.isoformat()}
+
+    first = client.post("/appointments", json=payload_a)
+    assert first.status_code == 201
+
+    second = client.post("/appointments", json=payload_b)
+    assert second.status_code == 409
+
+
+def test_invalid_status_filter_returns_422(client):
+    resp = client.get("/appointments", params={"status": "bogus"})
+    assert resp.status_code == 422
+
+
+def test_clinic_timezone_interpretation(client, doctor, patient, monkeypatch):
+    """A naive 13:00 when the clinic is in EAT should be stored as 10:00 UTC and returned as 13:00."""
+    from app import utils
+
+    monkeypatch.setattr(utils, "CLINIC_TIMEZONE", "Africa/Nairobi")
+    slot = next_valid_slot(hour=13)  # 13:00 EAT == 10:00 UTC
+
+    resp = client.post(
+        "/appointments",
+        json={"doctor_id": doctor.id, "patient_id": patient.id, "start_time": slot.isoformat()},
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    # Response is converted back to clinic-local time.
+    assert body["start_time"] == slot.isoformat()
+
+
+def test_day_boundary_uses_clinic_timezone(db_session, doctor, monkeypatch):
+    """When the clinic timezone is UTC+3, a requested clinic date must map to the
+    correct UTC window; bookings/blocks at the edges must not leak into adjacent days.
+    """
+    from app import utils
+
+    monkeypatch.setattr(utils, "CLINIC_TIMEZONE", "Africa/Nairobi")
+
+    patient_a = models.Patient(name="Patient A", email="patient.a@example.com")
+    patient_b = models.Patient(name="Patient B", email="patient.b@example.com")
+    db_session.add_all([patient_a, patient_b])
+    db_session.flush()
+
+    target_date = date(2026, 7, 29)
+    late_local = datetime(2026, 7, 29, 22, 0)
+    from app.utils import as_utc
+
+    late_utc = as_utc(late_local)
+    assert late_utc == datetime(2026, 7, 29, 19, 0)
+
+    db_session.add(
+        models.Appointment(
+            doctor_id=doctor.id,
+            patient_id=patient_a.id,
+            start_time=late_utc,
+            end_time=late_utc + timedelta(minutes=30),
+            status=models.AppointmentStatus.booked,
+        )
+    )
+
+    # Appointment at 00:00 the next clinic day -> 21:00 UTC previous day,
+    # which must NOT be attributed to target_date.
+    next_day_local = datetime(2026, 7, 30, 0, 0)
+    next_day_utc = as_utc(next_day_local)
+    assert next_day_utc == datetime(2026, 7, 29, 21, 0)
+
+    db_session.add(
+        models.Appointment(
+            doctor_id=doctor.id,
+            patient_id=patient_b.id,
+            start_time=next_day_utc,
+            end_time=next_day_utc + timedelta(minutes=30),
+            status=models.AppointmentStatus.booked,
+        )
+    )
+    db_session.commit()
+
+    slots = booking_service.get_available_slots(db_session, doctor.id, target_date)
+    slot_starts = {s["start_time"] for s in slots}
+    assert late_utc not in slot_starts
+    assert next_day_utc not in slot_starts
+
+    # Block a slot at 16:00 clinic time -> 13:00 UTC, inside working hours and the day.
+    blocked_local = datetime(2026, 7, 29, 16, 0)
+    booking_service.block_slot(
+        db_session, doctor.id, as_utc(blocked_local), reason="Meeting"
+    )
+
+    blocked = booking_service.list_blocked_slots(db_session, doctor.id, target_date)
+    blocked_starts = {bs.start_time for bs in blocked}
+    assert as_utc(blocked_local) in blocked_starts

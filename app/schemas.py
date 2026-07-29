@@ -1,14 +1,9 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
-
-def _naive_utc(dt: datetime) -> datetime:
-    """Accept aware datetimes but store/validate as naive UTC."""
-    if dt.tzinfo is not None:
-        return dt.astimezone(timezone.utc).replace(tzinfo=None)
-    return dt
+from app.utils import as_utc, from_utc
 
 
 class DoctorOut(BaseModel):
@@ -43,7 +38,7 @@ class AppointmentCreate(BaseModel):
     @field_validator("start_time")
     @classmethod
     def _normalize_start_time(cls, v: datetime) -> datetime:
-        return _naive_utc(v)
+        return as_utc(v)
 
 
 class RescheduleRequest(BaseModel):
@@ -52,7 +47,7 @@ class RescheduleRequest(BaseModel):
     @field_validator("new_start_time")
     @classmethod
     def _normalize_new_start_time(cls, v: datetime) -> datetime:
-        return _naive_utc(v)
+        return as_utc(v)
 
 
 class CancelRequest(BaseModel):
@@ -69,10 +64,20 @@ class AppointmentOut(BaseModel):
     status: str
     cancellation_reason: Optional[str] = None
 
+    @field_serializer("start_time", "end_time")
+    @classmethod
+    def _serialize_datetime(cls, v: datetime) -> datetime:
+        return from_utc(v)
+
 
 class SlotOut(BaseModel):
     start_time: datetime
     end_time: datetime
+
+    @field_serializer("start_time", "end_time")
+    @classmethod
+    def _serialize_datetime(cls, v: datetime) -> datetime:
+        return from_utc(v)
 
 
 class BlockedSlotCreate(BaseModel):
@@ -82,7 +87,7 @@ class BlockedSlotCreate(BaseModel):
     @field_validator("start_time")
     @classmethod
     def _normalize_start_time(cls, v: datetime) -> datetime:
-        return _naive_utc(v)
+        return as_utc(v)
 
 
 class BlockedSlotOut(BaseModel):
@@ -92,3 +97,8 @@ class BlockedSlotOut(BaseModel):
     start_time: datetime
     end_time: datetime
     reason: Optional[str] = None
+
+    @field_serializer("start_time", "end_time")
+    @classmethod
+    def _serialize_datetime(cls, v: datetime) -> datetime:
+        return from_utc(v)
