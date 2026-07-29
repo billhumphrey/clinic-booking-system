@@ -9,20 +9,10 @@ reschedule 30-minute appointment slots, without double-booking.
 
 ## Deployment URL
 
-`https://clinic-booking-system-1-cw4l.onrender.com/docs#/` 
+Live at: `https://clinic-booking-system-1-cw4l.onrender.com/docs#/`
 
-The repo is deploy-ready: Dockerfile, GitHub Actions workflows (`tests.yml` and
-`deploy.yml`), and a Render deploy-hook integration are in place. The remaining
-steps that require your own accounts are:
-
-1. Make the GitHub repo public (it currently exists but returned 404 when
-   checked, so it is either private or the remote URL needs updating).
-2. Create a Render web service connected to the repo.
-3. Add a Render Postgres instance and set `DATABASE_URL` on the web service.
-4. Add the Render deploy hook URL as the `RENDER_DEPLOY_HOOK` secret in
-   GitHub repo settings.
-
-See "Deploying it yourself" below for the exact click-through steps.
+The repo is deployed via Render with automated deploys from GitHub Actions. The
+original setup steps are preserved below for reference:
 
 ---
 
@@ -338,9 +328,9 @@ the appointment being moved.
 - [x] Section 1 design documented in README.
 - [x] Section 2 API implemented with required + bonus endpoints.
 - [x] Section 3 Dockerfile, `render.yaml`, and CI/CD workflows in place.
-- [ ] Public GitHub repo made public and current commits pushed.
-- [ ] Render web service deployed and public URL added to README.
-- [ ] `RENDER_DEPLOY_HOOK` secret added to GitHub repo settings.
+- [x] Public GitHub repo made public and current commits pushed.
+- [x] Render web service deployed and public URL added to README.
+- [x] `RENDER_DEPLOY_HOOK` secret added to GitHub repo settings.
 
 The commit history currently begins with one large initial commit; all later
 changes are granular. If you prefer a fully granular history, rewrite it
