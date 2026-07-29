@@ -196,7 +196,7 @@ app/
   database.py            # engine/session setup (SQLite/Postgres via DATABASE_URL)
   models.py              # SQLAlchemy models + the partial unique index
   schemas.py             # Pydantic request/response schemas
-  seed.py                # idempotent demo data (5 doctors, 3 patients)
+  seed.py                # creates tables; no demo data is inserted
   utils.py               # small helpers (e.g. naive-UTC current time)
   routers/
     doctors.py           # GET /doctors, GET /doctors/{id}/availability
@@ -229,7 +229,7 @@ needed, and so there's exactly one place double-booking logic can go wrong.
 ```bash
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-python -m app.seed              # creates clinic.db, seeds 5 doctors + 3 patients
+python -m app.seed              # creates clinic.db (no demo data)
 uvicorn app.main:app --reload   # http://localhost:8000/docs
 ```
 
