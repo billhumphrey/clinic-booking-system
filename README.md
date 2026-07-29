@@ -101,6 +101,7 @@ works identically on SQLite (dev) and Postgres (prod).
 | `GET` | `/doctors/{id}/blocked-slots?date=YYYY-MM-DD` | 200 | 404 (doctor) |
 | `DELETE` | `/doctors/{id}/blocked-slots?start_time=YYYY-MM-DDTHH:MM:SS` | 204 | 404 (doctor/slot) |
 | `GET` | `/doctors/{id}/availability?date=YYYY-MM-DD` | 200 | 404 (doctor) |
+| `GET` | `/doctors/{id}/appointments` | 200 | 404 (doctor) |
 | `PATCH` | `/appointments/{id}/cancel` | 200 | 404 (appointment), 409 (already cancelled) |
 | `PATCH` | `/appointments/{id}/reschedule` | 200 | 400 (already cancelled / invalid new slot), 404, 409 (new slot conflict) |
 | `GET` | `/patients/{id}/appointments` | 200 | 404 (patient) |
@@ -108,9 +109,9 @@ works identically on SQLite (dev) and Postgres (prod).
 | `GET` | `/patients` | 200 | — |
 | `GET` | `/health` | 200 | — |
 
-`GET /doctors` and `GET /patients` aren't in the brief's required list but
-exist so the API is explorable without touching the DB directly (e.g. to get
-valid `doctor_id`/`patient_id` values for the demo).
+`GET /doctors`, `GET /patients`, and `GET /doctors/{id}/appointments` aren't in the
+brief's required list but exist so the API is explorable without touching the
+DB directly (e.g. to get valid `doctor_id`/`patient_id` values for the demo).
 
 ### Key trade-offs
 
