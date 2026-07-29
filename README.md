@@ -11,6 +11,8 @@ reschedule 30-minute appointment slots, without double-booking.
 
 Live at: `https://clinic-booking-system-1-cw4l.onrender.com/docs#/`
 
+The live deployment uses Render's managed PostgreSQL database (`clinic-booking-db`).
+
 The repo is deployed via Render with automated deploys from GitHub Actions. The
 original setup steps are preserved below for reference:
 
