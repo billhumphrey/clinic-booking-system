@@ -1,14 +1,27 @@
-from datetime import datetime, timedelta, date as date_cls
+from datetime import datetime, timedelta, time, date as date_cls
 
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import models
+from ..schemas import _naive_utc
 from ..utils import utc_now
 
 SLOT_MINUTES = 30
 MIN_LEAD_TIME = timedelta(hours=1)
+
+DEFAULT_START_TIME = time(9, 0)
+DEFAULT_END_TIME = time(17, 0)
+
+
+def _default_working_hours(day_of_week: int) -> list[tuple[time, time]]:
+    """
+    All doctors share the same working hours for this assessment.
+    Slots are generated from this function instead of the DB so availability
+    is always computed fresh and only excludes booked/blocked slots.
+    """
+    return [(DEFAULT_START_TIME, DEFAULT_END_TIME)]
 
 
 def _slot_end(start: datetime) -> datetime:
@@ -28,6 +41,22 @@ def get_doctor_or_404(db: Session, doctor_id: int) -> models.Doctor:
     if not doctor:
         raise HTTPException(status_code=404, detail="Doctor not found")
     return doctor
+
+
+def _blocked_slots_for_day(
+    db: Session, doctor_id: int, day: date_cls
+) -> list[models.BlockedSlot]:
+    day_start = datetime.combine(day, datetime.min.time())
+    day_end = day_start + timedelta(days=1)
+    return (
+        db.query(models.BlockedSlot)
+        .filter(
+            models.BlockedSlot.doctor_id == doctor_id,
+            models.BlockedSlot.start_time >= day_start,
+            models.BlockedSlot.start_time < day_end,
+        )
+        .all()
+    )
 
 
 def create_patient(db: Session, name: str, email: str) -> models.Patient:
@@ -57,22 +86,20 @@ def get_appointment_or_404(db: Session, appointment_id: int) -> models.Appointme
     return appt
 
 
-def _working_hours_for_day(db: Session, doctor_id: int, day_of_week: int):
-    return (
-        db.query(models.WorkingHours)
-        .filter(
-            models.WorkingHours.doctor_id == doctor_id,
-            models.WorkingHours.day_of_week == day_of_week,
-        )
-        .all()
-    )
+def list_appointments(
+    db: Session, status_filter: str | None = None
+) -> list[models.Appointment]:
+    query = db.query(models.Appointment)
+    if status_filter:
+        query = query.filter(models.Appointment.status == status_filter)
+    return query.order_by(models.Appointment.start_time.asc()).all()
 
 
 def _is_within_working_hours(db: Session, doctor_id: int, start: datetime) -> bool:
-    blocks = _working_hours_for_day(db, doctor_id, start.weekday())
+    # db/doctor_id are kept for future per-doctor overrides; default is shared.
     slot_end_time = _slot_end(start).time()
-    for block in blocks:
-        if block.start_time <= start.time() and slot_end_time <= block.end_time:
+    for block_start, block_end in _default_working_hours(start.weekday()):
+        if block_start <= start.time() and slot_end_time <= block_end:
             return True
     return False
 
@@ -87,10 +114,6 @@ def get_available_slots(db: Session, doctor_id: int, day: date_cls) -> list[dict
     would need to change.
     """
     get_doctor_or_404(db, doctor_id)
-    blocks = _working_hours_for_day(db, doctor_id, day.weekday())
-    if not blocks:
-        return []
-
     day_start = datetime.combine(day, datetime.min.time())
     day_end = day_start + timedelta(days=1)
 
@@ -105,17 +128,69 @@ def get_available_slots(db: Session, doctor_id: int, day: date_cls) -> list[dict
         .all()
     )
     booked_starts = {row[0] for row in booked_rows}
+    blocked_starts = {
+        bs.start_time for bs in _blocked_slots_for_day(db, doctor_id, day)
+    }
 
     now = utc_now()
     slots = []
-    for block in blocks:
-        cur = datetime.combine(day, block.start_time)
-        block_end = datetime.combine(day, block.end_time)
-        while cur + timedelta(minutes=SLOT_MINUTES) <= block_end:
-            if cur not in booked_starts and (cur - now) >= MIN_LEAD_TIME:
+    for block_start, block_end in _default_working_hours(day.weekday()):
+        cur = datetime.combine(day, block_start)
+        block_end_dt = datetime.combine(day, block_end)
+        while cur + timedelta(minutes=SLOT_MINUTES) <= block_end_dt:
+            if (
+                cur not in booked_starts
+                and cur not in blocked_starts
+                and (cur - now) >= MIN_LEAD_TIME
+            ):
                 slots.append({"start_time": cur, "end_time": _slot_end(cur)})
             cur += timedelta(minutes=SLOT_MINUTES)
     return slots
+
+
+def block_slot(
+    db: Session, doctor_id: int, start_time: datetime, reason: str | None = None
+) -> models.BlockedSlot:
+    get_doctor_or_404(db, doctor_id)
+    _validate_slot(db, doctor_id, start_time)
+
+    blocked = models.BlockedSlot(
+        doctor_id=doctor_id,
+        start_time=start_time,
+        end_time=_slot_end(start_time),
+        reason=reason,
+    )
+    db.add(blocked)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Slot is already blocked")
+    db.refresh(blocked)
+    return blocked
+
+
+def list_blocked_slots(
+    db: Session, doctor_id: int, day: date_cls
+) -> list[models.BlockedSlot]:
+    get_doctor_or_404(db, doctor_id)
+    return _blocked_slots_for_day(db, doctor_id, day)
+
+
+def unblock_slot(db: Session, doctor_id: int, start_time: datetime) -> None:
+    start_time = _naive_utc(start_time)
+    blocked = (
+        db.query(models.BlockedSlot)
+        .filter(
+            models.BlockedSlot.doctor_id == doctor_id,
+            models.BlockedSlot.start_time == start_time,
+        )
+        .first()
+    )
+    if not blocked:
+        raise HTTPException(status_code=404, detail="Blocked slot not found")
+    db.delete(blocked)
+    db.commit()
 
 
 def _validate_slot(
